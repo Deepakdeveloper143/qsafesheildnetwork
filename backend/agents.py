@@ -13,10 +13,12 @@ class PKISecurityCrew:
     """
     Orchestrates the CrewAI multi-agent team to audit the PKI and firewall security posture.
     """
-    def __init__(self, db_client: DatabaseClient, groq_api_key: Optional[str] = None):
+    def __init__(self, db_client: DatabaseClient, groq_api_key: Optional[str] = None, system_instructions: Optional[str] = None):
         self.db = db_client
         self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
         self.has_credentials = bool(self.groq_api_key and "your_groq_api" not in self.groq_api_key)
+        # Optional security orchestration instructions to guide agent behavior
+        self.system_instructions = system_instructions or ""
 
     def run_security_audit(self) -> Dict[str, Any]:
         """
@@ -58,7 +60,9 @@ class PKISecurityCrew:
             "Content-Type": "application/json"
         }
         
-        system_prompt = (
+        # Prepend any provided system-level security instructions to the system prompt
+        base_instructions = self.system_instructions + "\n\n" if self.system_instructions else ""
+        system_prompt = base_instructions + (
             "You are an orchestrator of a security audit team consisting of four agents:\n"
             "1. Certificate Security Officer (Audits SSL/TLS certificates and FIPS HSM state)\n"
             "2. Network Security Auditor (Inspects open ports other than 443, and firewall compliance)\n"
@@ -188,45 +192,46 @@ class PKISecurityCrew:
         })
 
         # Generate report text
-        report = f"""# MULTI-AGENT PKI & FIREWALL COMPLIANCE REPORT
+        header_instr = f"**Orchestrator Instructions:** {self.system_instructions}\n\n" if self.system_instructions else ""
+        report = header_instr + f"""# MULTI-AGENT PKI & FIREWALL COMPLIANCE REPORT
 
-**Audit Date:** {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}  
-**Engine:** Local Multi-Agent Security Auditor (Simulation Mode)
+    **Audit Date:** {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}  
+    **Engine:** Local Multi-Agent Security Auditor (Simulation Mode)
 
----
+    ---
 
-## 1. Executive Summary
-The security posture was audited against standard cybersecurity and cryptographic regulatory frameworks (FIPS 140-2, PCI-DSS, HIPAA, ISO 27001). 
-- **Certificate Expiry Health:** {"CRITICAL ALERT" if expiring > 0 else "HEALTHY"} (Expiring within 45 days: {expiring})
-- **Network Compliance:** {"NON-COMPLIANT" if not is_compliant else "COMPLIANT"} (Non-443 open ports: {len(non_allowed_open)})
-- **Quantum Exposure:** {"HIGH RISK" if critical_quantum > 0 else "STABLE"} (Classical keys vulnerable to Shor's: {critical_quantum})
+    ## 1. Executive Summary
+    The security posture was audited against standard cybersecurity and cryptographic regulatory frameworks (FIPS 140-2, PCI-DSS, HIPAA, ISO 27001). 
+    - **Certificate Expiry Health:** {"CRITICAL ALERT" if expiring > 0 else "HEALTHY"} (Expiring within 45 days: {expiring})
+    - **Network Compliance:** {"NON-COMPLIANT" if not is_compliant else "COMPLIANT"} (Non-443 open ports: {len(non_allowed_open)})
+    - **Quantum Exposure:** {"HIGH RISK" if critical_quantum > 0 else "STABLE"} (Classical keys vulnerable to Shor's: {critical_quantum})
 
----
+    ---
 
-## 2. Agent Findings & Details
+    ## 2. Agent Findings & Details
 
-### 🛡️ Certificate Security Officer
-- Found {total_certs} inventoried certificates.
-- Expiring certificates: {expiring} items require replacement before the 45-day threshold.
-- HSM Root CA remains online and operating in FIPS 140-2 Level 3 mode.
+    ### 🛡️ Certificate Security Officer
+    - Found {total_certs} inventoried certificates.
+    - Expiring certificates: {expiring} items require replacement before the 45-day threshold.
+    - HSM Root CA remains online and operating in FIPS 140-2 Level 3 mode.
 
-### ⚙️ Network Security Auditor
-- Scan detected ports: {[p.get('port') for p in normalized_ports]}
-- Status: {"Enforced" if not is_compliant else "Clean"}
-- Policy check: Only port 443 is permitted. Rule applied to drop traffic on other active ports.
+    ### ⚙️ Network Security Auditor
+    - Scan detected ports: {[p.get('port') for p in normalized_ports]}
+    - Status: {"Enforced" if not is_compliant else "Clean"}
+    - Policy check: Only port 443 is permitted. Rule applied to drop traffic on other active ports.
 
-### ⚛️ Post-Quantum Risk Analyst
-- Shor's algorithm simulation confirms classical RSA-2048 keys will be compromised.
-- logical qubits needed for decryption: 4096.
-- Migration recommendation: NIST ML-DSA (CRYSTALS-Dilithium).
+    ### ⚛️ Post-Quantum Risk Analyst
+    - Shor's algorithm simulation confirms classical RSA-2048 keys will be compromised.
+    - logical qubits needed for decryption: 4096.
+    - Migration recommendation: NIST ML-DSA (CRYSTALS-Dilithium).
 
----
+    ---
 
-## 3. Compliance Mapping & Remediations
-1. **PCI-DSS 4.0 (Req 1.2.1 / 2.2)**: Block ports other than 443. *Action: Trigger firewall block rules.*
-2. **HIPAA (45 CFR § 164.312)**: Renew keys before expiry. *Action: Auto-renew certificates expiring < 45 days via Entrust HSM.*
-3. **FIPS 140-2**: Ensure HSM performs all cryptographic handshakes. *Action: Verified.*
-"""
+    ## 3. Compliance Mapping & Remediations
+    1. **PCI-DSS 4.0 (Req 1.2.1 / 2.2)**: Block ports other than 443. *Action: Trigger firewall block rules.*
+    2. **HIPAA (45 CFR § 164.312)**: Renew keys before expiry. *Action: Auto-renew certificates expiring < 45 days via Entrust HSM.*
+    3. **FIPS 140-2**: Ensure HSM performs all cryptographic handshakes. *Action: Verified.*
+    """
 
         # Save audit log
         self.db.save_audit_log(

@@ -8,21 +8,27 @@ from typing import List, Dict, Any, Optional
 
 log = logging.getLogger("venafi.database")
 
+
 class DatabaseClient:
     """
     Unified database client that connects to Supabase if configured,
     or falls back to a local SQLite database.
     """
+
     def __init__(self, supabase_url: Optional[str] = None, supabase_key: Optional[str] = None):
         self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
         self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY")
-        self.use_supabase = bool(self.supabase_url and self.supabase_key and "your-supabase" not in self.supabase_url)
+        self.use_supabase = bool(
+            self.supabase_url
+            and self.supabase_key
+            and "your-supabase" not in self.supabase_url
+        )
         self.sqlite_path = "pki_audit.db"
         self.client = None
 
         if self.use_supabase:
             try:
-                from supabase import create_client, Client
+                from supabase import create_client, Client  # noqa: F401
                 self.client = create_client(self.supabase_url, self.supabase_key)
                 log.info("Successfully connected to Supabase DB.")
             except Exception as e:
@@ -33,12 +39,15 @@ class DatabaseClient:
             log.info(f"Using local SQLite database at {self.sqlite_path}")
             self._init_sqlite()
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Initialisation & Migration
+    # ──────────────────────────────────────────────────────────────────────────
+
     def _init_sqlite(self):
         """Initialize local SQLite tables if they do not exist."""
         conn = sqlite3.connect(self.sqlite_path)
         cursor = conn.cursor()
-        
-        # Certificates table
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS certificates (
                 id TEXT PRIMARY KEY,
@@ -52,8 +61,7 @@ class DatabaseClient:
                 created_at TEXT
             )
         """)
-        
-        # Firewall scans table
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS firewall_scans (
                 id TEXT PRIMARY KEY,
@@ -66,8 +74,7 @@ class DatabaseClient:
                 scan_duration_s REAL
             )
         """)
-        
-        # Audit logs table
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS audit_logs (
                 id TEXT PRIMARY KEY,
@@ -78,7 +85,6 @@ class DatabaseClient:
             )
         """)
 
-        # Quantum audits table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS quantum_audits (
                 id TEXT PRIMARY KEY,
@@ -92,17 +98,16 @@ class DatabaseClient:
                 key_size INTEGER
             )
         """)
-        
+
         conn.commit()
 
         # Migration: ensure expected columns exist on existing DB files
         try:
             cursor.execute("PRAGMA table_info(quantum_audits)")
             existing_cols = [r[1] for r in cursor.fetchall()]
-            # Add missing columns safely
-            if 'key_type' not in existing_cols:
+            if "key_type" not in existing_cols:
                 cursor.execute("ALTER TABLE quantum_audits ADD COLUMN key_type TEXT")
-            if 'key_size' not in existing_cols:
+            if "key_size" not in existing_cols:
                 cursor.execute("ALTER TABLE quantum_audits ADD COLUMN key_size INTEGER")
             conn.commit()
         except Exception as e:
@@ -110,7 +115,10 @@ class DatabaseClient:
 
         conn.close()
 
-    # --- Certificates ---
+    # ──────────────────────────────────────────────────────────────────────────
+    # Certificates
+    # ──────────────────────────────────────────────────────────────────────────
+
     def save_certificate(self, cert: Dict[str, Any]) -> bool:
         if not cert.get("id"):
             cert["id"] = str(uuid.uuid4())
@@ -119,13 +127,11 @@ class DatabaseClient:
 
         if self.use_supabase:
             try:
-                res = self.client.table("certificates").upsert(cert).execute()
+                self.client.table("certificates").upsert(cert).execute()
                 return True
             except Exception as e:
-                log.error(f"Supabase save_certificate error: {e}")
-                # fallback save to SQLite
-                self._save_certificate_sqlite(cert)
-                return True
+                log.error(f"Supabase save_certificate error: {e}. Falling back to SQLite.")
+                return self._save_certificate_sqlite(cert)
         else:
             return self._save_certificate_sqlite(cert)
 
@@ -134,7 +140,7 @@ class DatabaseClient:
             conn = sqlite3.connect(self.sqlite_path)
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO certificates 
+                INSERT OR REPLACE INTO certificates
                 (id, name, issuer, expiry_date, days_remaining, risk_severity, status, public_key, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -149,23 +155,31 @@ class DatabaseClient:
             log.error(f"SQLite save_certificate error: {e}")
             return False
 
-    def get_all_certificates(self) -> List[Dict[str, Any]]:
+    def get_all_certificates(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Retrieve all certificates, optionally limiting the number of results."""
         if self.use_supabase:
             try:
-                res = self.client.table("certificates").select("*").execute()
+                query = self.client.table("certificates").select("*")
+                if limit is not None:
+                    query = query.limit(limit)
+                res = query.execute()
                 return res.data
             except Exception as e:
                 log.error(f"Supabase get_all_certificates error: {e}. Reading SQLite fallback.")
-                return self._get_all_certificates_sqlite()
+                return self._get_all_certificates_sqlite(limit)
         else:
-            return self._get_all_certificates_sqlite()
+            return self._get_all_certificates_sqlite(limit)
 
-    def _get_all_certificates_sqlite(self) -> List[Dict[str, Any]]:
+    def _get_all_certificates_sqlite(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch certificates from the local SQLite database."""
         try:
             conn = sqlite3.connect(self.sqlite_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM certificates ORDER BY expiry_date ASC")
+            sql = "SELECT * FROM certificates ORDER BY expiry_date ASC"
+            if limit is not None:
+                sql += f" LIMIT {limit}"
+            cursor.execute(sql)
             rows = cursor.fetchall()
             conn.close()
             return [dict(row) for row in rows]
@@ -173,21 +187,22 @@ class DatabaseClient:
             log.error(f"SQLite get_all_certificates error: {e}")
             return []
 
-    # --- Firewall Scans ---
+    # ──────────────────────────────────────────────────────────────────────────
+    # Firewall Scans
+    # ──────────────────────────────────────────────────────────────────────────
+
     def save_firewall_scan(self, scan: Dict[str, Any]) -> bool:
         if not scan.get("id"):
             scan["id"] = str(uuid.uuid4())
         if not scan.get("scan_time"):
             scan["scan_time"] = datetime.now(timezone.utc).isoformat()
 
-        # Serialize lists to string for unified storage
         open_ports_str = json.dumps(scan.get("open_ports", []))
         blocked_ports_str = json.dumps(scan.get("blocked_ports", []))
         is_compliant_val = 1 if scan.get("is_compliant", False) else 0
 
         if self.use_supabase:
             try:
-                # We write as structured JSON to Supabase
                 data = {
                     "id": scan["id"],
                     "target_host": scan.get("target_host"),
@@ -196,18 +211,19 @@ class DatabaseClient:
                     "open_ports": scan.get("open_ports", []),
                     "blocked_ports": scan.get("blocked_ports", []),
                     "is_compliant": scan.get("is_compliant", False),
-                    "scan_duration_s": scan.get("scan_duration_s", 0.0)
+                    "scan_duration_s": scan.get("scan_duration_s", 0.0),
                 }
                 self.client.table("firewall_scans").upsert(data).execute()
                 return True
             except Exception as e:
-                log.error(f"Supabase save_firewall_scan error: {e}")
-                self._save_firewall_scan_sqlite(scan, open_ports_str, blocked_ports_str, is_compliant_val)
-                return True
+                log.error(f"Supabase save_firewall_scan error: {e}. Falling back to SQLite.")
+                return self._save_firewall_scan_sqlite(scan, open_ports_str, blocked_ports_str, is_compliant_val)
         else:
             return self._save_firewall_scan_sqlite(scan, open_ports_str, blocked_ports_str, is_compliant_val)
 
-    def _save_firewall_scan_sqlite(self, scan: Dict[str, Any], open_ports: str, blocked_ports: str, is_compliant: int) -> bool:
+    def _save_firewall_scan_sqlite(
+        self, scan: Dict[str, Any], open_ports: str, blocked_ports: str, is_compliant: int
+    ) -> bool:
         try:
             conn = sqlite3.connect(self.sqlite_path)
             cursor = conn.cursor()
@@ -245,11 +261,10 @@ class DatabaseClient:
             cursor.execute("SELECT * FROM firewall_scans ORDER BY scan_time DESC")
             rows = cursor.fetchall()
             conn.close()
-            
+
             result = []
             for r in rows:
                 d = dict(r)
-                # Deserialize fields
                 try:
                     d["open_ports"] = json.loads(d["open_ports"])
                 except Exception:
@@ -265,17 +280,17 @@ class DatabaseClient:
             log.error(f"SQLite get_firewall_scans error: {e}")
             return []
 
-    # --- Audit Logs ---
+    # ──────────────────────────────────────────────────────────────────────────
+    # Audit Logs
+    # ──────────────────────────────────────────────────────────────────────────
+
     def save_audit_log(self, action: str, details: str, actor: str = "System Agent") -> bool:
-        log_id = str(uuid.uuid4())
-        timestamp = datetime.now(timezone.utc).isoformat()
-        
         data = {
-            "id": log_id,
-            "timestamp": timestamp,
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
             "details": details,
-            "actor": actor
+            "actor": actor,
         }
 
         if self.use_supabase:
@@ -283,9 +298,8 @@ class DatabaseClient:
                 self.client.table("audit_logs").insert(data).execute()
                 return True
             except Exception as e:
-                log.error(f"Supabase save_audit_log error: {e}")
-                self._save_audit_log_sqlite(data)
-                return True
+                log.error(f"Supabase save_audit_log error: {e}. Falling back to SQLite.")
+                return self._save_audit_log_sqlite(data)
         else:
             return self._save_audit_log_sqlite(data)
 
@@ -328,7 +342,10 @@ class DatabaseClient:
             log.error(f"SQLite get_audit_logs error: {e}")
             return []
 
-    # --- Quantum Audits ---
+    # ──────────────────────────────────────────────────────────────────────────
+    # Quantum Audits
+    # ──────────────────────────────────────────────────────────────────────────
+
     def save_quantum_audit(self, audit: Dict[str, Any]) -> bool:
         if not audit.get("id"):
             audit["id"] = str(uuid.uuid4())
@@ -340,9 +357,8 @@ class DatabaseClient:
                 self.client.table("quantum_audits").upsert(audit).execute()
                 return True
             except Exception as e:
-                log.error(f"Supabase save_quantum_audit error: {e}")
-                self._save_quantum_audit_sqlite(audit)
-                return True
+                log.error(f"Supabase save_quantum_audit error: {e}. Falling back to SQLite.")
+                return self._save_quantum_audit_sqlite(audit)
         else:
             return self._save_quantum_audit_sqlite(audit)
 
@@ -352,7 +368,8 @@ class DatabaseClient:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO quantum_audits
-                (id, timestamp, cert_id, cert_name, quantum_risk_score, estimated_break_time_years, recommended_algorithm, key_type, key_size)
+                (id, timestamp, cert_id, cert_name, quantum_risk_score,
+                 estimated_break_time_years, recommended_algorithm, key_type, key_size)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 audit["id"], audit["timestamp"], audit.get("cert_id"), audit.get("cert_name"),
@@ -389,3 +406,16 @@ class DatabaseClient:
         except Exception as e:
             log.error(f"SQLite get_quantum_audits error: {e}")
             return []
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Health Check
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def is_healthy(self) -> bool:
+        """Check basic DB connectivity and return health status."""
+        try:
+            self.get_all_certificates(limit=1)
+            return True
+        except Exception as e:
+            log.error(f"Database health check failed: {e}")
+            return False
