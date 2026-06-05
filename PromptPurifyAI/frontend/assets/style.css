@@ -1,0 +1,63 @@
+/* Dark Cybersecurity Theme */
+
+:root {
+    --primary-bg: #0a0e17;
+    --secondary-bg: #111827;
+    --accent: #00e5ff;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --border: #1e293b;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --success: #10b981;
+}
+
+body {
+    background-color: var(--primary-bg) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background-color: var(--primary-bg);
+}
+
+.stSidebar {
+    background-color: var(--secondary-bg) !important;
+    border-right: 1px solid var(--border);
+}
+
+/* Glassmorphism Cards */
+.css-1r6slb0, .stCard {
+    background: rgba(17, 24, 39, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Headers */
+h1, h2, h3 {
+    color: var(--text-primary) !important;
+    font-weight: 600 !important;
+}
+
+/* Accent text */
+.accent-text {
+    color: var(--accent);
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: transparent !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--accent) !important;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    background-color: rgba(0, 229, 255, 0.1) !important;
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+}

@@ -1,0 +1,11 @@
+fastapi==0.95.2
+pydantic==1.10.13
+uvicorn[standard]==0.22.0
+# httpx pinned to 0.23.x to satisfy supabase 1.0.0
+httpx==0.23.3
+httpcore==0.16.3
+# Use Pydantic 1.x to remain compatible with FastAPI 0.95.x
+pydantic==1.10.13
+python-dotenv==1.0.0
+psycopg2-binary==2.9.10
+supabase==1.0.0
