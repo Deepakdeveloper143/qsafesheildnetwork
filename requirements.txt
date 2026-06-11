@@ -7,7 +7,7 @@ pandas
 numpy
 python-dotenv
 requests
-crewai==1.14.6
+crewai
 cryptography>=41.0.0
 pandas>=2.0.0
 reportlab>=4.0.0
