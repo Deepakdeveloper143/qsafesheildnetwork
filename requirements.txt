@@ -1,5 +1,12 @@
 streamlit>=1.30.0
 supabase>=2.3.0
+groq
+qiskit
+plotly
+pandas
+numpy
+python-dotenv
+requests
 crewai==1.14.6
 cryptography>=41.0.0
 pandas>=2.0.0
